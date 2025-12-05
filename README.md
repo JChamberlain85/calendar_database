@@ -9,14 +9,15 @@ A comprehensive calendar application built with **Python (Flask)** and **MySQL**
 ### Step 1: Install Python Libraries
 Open your terminal (Command Prompt or PowerShell) in the project folder and run the following command to install the required dependencies:
 
-pip install flask pymysql requests icalendar
+``pip install flask pymysql requests icalendar``
 
 ### Step 2: Configure the Database
+Donwload the Main.py and Template folder into a shared folder.
 The application needs to know your specific MySQL password to create the database.
 
 1.  Open **main.py** in a text editor (Notepad, VS Code, etc.).
 2.  Locate the `DB_CONFIG` section near the top of the file.
-3.  Update the **password** field to match your MySQL root password.
+3.  Update the fields to match your MySQL Database.
 
 # Change config file to match your database
 ``DB_CONFIG = {
@@ -29,7 +30,7 @@ The application needs to know your specific MySQL password to create the databas
 
 ## User Guide
 
-Step 1: Start MySQL and run main.py 
+Step 1: Start your MySQL database and run main.py 
 
 Step 2: Access the Website by copying and pasting the link the terminal gives you after running the main file
 
