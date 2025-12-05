@@ -37,7 +37,7 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES ('7fe2f4df-72b1-463a-9c8e-3cde45d296f3','JChamberlain','12345');
+INSERT INTO `users` VALUES ('7fe2f4df-72b1-463a-9c8e-3cde45d296f3','JChamberlain','12345'),('a6b42cd8-a9f1-45dd-8e03-e8855cd931c5','JChamberlain-1','12345'),('af02d12b-5b6a-4bac-aabd-c017510d7eb4','JChamberlain-2','12345');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -50,4 +50,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-12-05 14:21:24
+-- Dump completed on 2025-12-05 17:44:18

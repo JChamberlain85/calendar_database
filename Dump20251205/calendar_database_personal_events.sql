@@ -36,7 +36,7 @@ CREATE TABLE `personal_events` (
 
 LOCK TABLES `personal_events` WRITE;
 /*!40000 ALTER TABLE `personal_events` DISABLE KEYS */;
-INSERT INTO `personal_events` VALUES ('8f3c7052-ea79-4c15-ac16-223c8c065cf1',NULL);
+INSERT INTO `personal_events` VALUES ('c7163e4a-a877-4bbc-ab87-161fb8f38269',NULL),('d3dca8be-d6bb-4d99-982f-25941b3a0c82',NULL);
 /*!40000 ALTER TABLE `personal_events` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -49,4 +49,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2025-12-05 14:21:24
+-- Dump completed on 2025-12-05 17:44:18
