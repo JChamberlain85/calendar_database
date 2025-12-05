@@ -19,13 +19,13 @@ The application needs to know your specific MySQL password to create the databas
 3.  Update the **password** field to match your MySQL root password.
 
 # Change config file to match your database
-``DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "password",  
-    "db": "project3",
-    "port": 3306
-}``
+``DB_CONFIG = {``
+``    "host": "localhost",``
+``    "user": "root",``
+``    "password": "password", `` 
+``    "db": "project3",``
+``    "port": 3306``
+``}``
 
 ## User Guide
 
@@ -35,4 +35,4 @@ Step 2: Access the Website by copying and pasting the link the terminal gives yo
 
 Step 3: Register account and log in
 
-### Step 4: Add events by clicking on dates, import canvas assignments by copying the link given after clicking the "Calendar Feed" button on the right side of your canvas calendar and copy/paste that link in the "Import Canvas" Section of the calendar website
+Step 4: Add events by clicking on dates, import canvas assignments by copying the link given after clicking the "Calendar Feed" button on the right side of your canvas calendar and copy/paste that link in the "Import Canvas" Section of the calendar website
