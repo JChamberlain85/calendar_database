@@ -19,13 +19,13 @@ The application needs to know your specific MySQL password to create the databas
 3.  Update the **password** field to match your MySQL root password.
 
 # Change config file to match your database
-``DB_CONFIG = {``
-``    "host": "localhost",``
-``    "user": "root",``
-``    "password": "password", `` 
-``    "db": "project3",``
-``    "port": 3306``
-``}``
+``DB_CONFIG = {
+    "host": "localhost",
+    "user": "root",
+    "password": "password", 
+    "db": "project3",
+    "port": 3306
+}``
 
 ## User Guide
 
