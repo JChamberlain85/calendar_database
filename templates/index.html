@@ -5,23 +5,86 @@
     <title>My Calendar</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js'></script>
+    <script src='https://cdn.jsdelivr.net/npm/@fullcalendar/rrule@6.1.8/index.global.min.js'></script>
+    <script src='https://cdn.jsdelivr.net/npm/rrule@2.6.4/dist/es5/rrule.min.js'></script>
+
     <style>
-        body { padding: 20px; font-family: sans-serif; }
-        #calendar { max-width: 1100px; margin: 0 auto; }
-        .toolbar { margin-bottom: 20px; display: flex; justify-content: space-between; }
+        body { padding: 20px; font-family: sans-serif; background-color: #f7f7f7; }
+        #calendar { max-width: 1100px; margin: 0 auto; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .toolbar { max-width: 1100px; margin: 0 auto 20px; display: flex; justify-content: space-between; align-items: center; }
+        .fc-event { cursor: pointer; }
     </style>
 </head>
 <body>
 
-<div class="container">
+<div class="container-fluid">
     <div class="toolbar">
-        <h2>My Calendar 📅</h2>
-        <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#canvasModal">
-            Import from Canvas (ICS)
-        </button>
+        <div>
+            <h2>🗓️ {{ username }}'s Calendar</h2>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#canvasModal">Import Canvas</button>
+            <a href="/logout" class="btn btn-outline-danger">Sign Out</a>
+        </div>
     </div>
 
     <div id='calendar'></div>
+</div>
+
+<div class="modal fade" id="eventModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create Event</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addEventForm">
+                    <div class="mb-3">
+                        <label>Title</label>
+                        <input type="text" id="evTitle" class="form-control" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label>Start</label>
+                            <input type="datetime-local" id="evStart" class="form-control" required>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label>End</label>
+                            <input type="datetime-local" id="evEnd" class="form-control">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label>Location</label>
+                        <input type="text" id="evLocation" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label>Description</label>
+                        <textarea id="evDesc" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label>Recurrence</label>
+                            <select id="evRecur" class="form-select">
+                                <option value="NONE">None</option>
+                                <option value="DAILY">Daily</option>
+                                <option value="WEEKLY">Weekly</option>
+                                <option value="MONTHLY">Monthly</option>
+                            </select>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label>Color</label>
+                            <input type="color" id="evColor" class="form-control form-control-color" value="#039be5">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEvent()">Save Event</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="modal fade" id="canvasModal" tabindex="-1">
@@ -32,83 +95,100 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <div class="mb-3">
-                    <label>Canvas Calendar Feed URL (.ics)</label>
-                    <input type="text" id="canvasUrl" class="form-control" placeholder="https://umsystem.instructure.com/feeds/calendars/user_....ics">
-                    <small class="text-muted">
-                        Find this link in Canvas > Calendar > "Calendar Feed" (bottom right).
-                    </small>
-                </div>
+                <label>Canvas ICS URL</label>
+                <input type="url" id="canvasUrl" class="form-control" placeholder="https://.../feed.ics">
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-primary" onclick="importCanvas()">Import Events</button>
+                <button type="button" class="btn btn-primary" onclick="importCanvas()">Import</button>
             </div>
         </div>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
 <script>
+    var calendar;
+    var eventModal;
+
     document.addEventListener('DOMContentLoaded', function() {
         var calendarEl = document.getElementById('calendar');
-        var calendar = new FullCalendar.Calendar(calendarEl, {
+        eventModal = new bootstrap.Modal(document.getElementById('eventModal'));
+
+        calendar = new FullCalendar.Calendar(calendarEl, {
             initialView: 'dayGridMonth',
-            headerToolbar: {
-                left: 'prev,next today',
-                center: 'title',
-                right: 'dayGridMonth,timeGridWeek,timeGridDay'
-            },
+            headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' },
             selectable: true,
             editable: true,
-            events: '/api/events', // Flask route to fetch events
+            events: '/api/events',
             
-            // Add Event Logic
+            // When user clicks a date slot
             select: function(info) {
-                var title = prompt('Enter Event Title:');
-                if (title) {
-                    fetch('/api/events', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            title: title,
-                            start: info.startStr,
-                            end: info.endStr
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        calendar.refetchEvents(); // Refresh calendar to show new event
-                    });
-                }
-                calendar.unselect();
+                // Pre-fill the modal with the clicked date
+                // Note: datetime-local expects "YYYY-MM-DDTHH:MM"
+                let d = new Date(info.startStr);
+                // Adjust for timezone offset for input value
+                d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+                document.getElementById('evStart').value = d.toISOString().slice(0,16);
+                
+                // Clear other fields
+                document.getElementById('evTitle').value = '';
+                document.getElementById('evEnd').value = '';
+                document.getElementById('evRecur').value = 'NONE';
+                
+                eventModal.show();
             },
 
-            // Delete Event Logic
+            // Click existing event to delete (or view details)
             eventClick: function(info) {
-                if (confirm("Delete '" + info.event.title + "'?")) {
-                    fetch('/api/events/' + info.event.id, {
-                        method: 'DELETE'
-                    })
-                    .then(() => {
-                        info.event.remove();
-                    });
+                // You could open a "View Details" modal here. 
+                // For now, keep delete functionality:
+                let desc = info.event.extendedProps.description || "";
+                let text = "Delete '" + info.event.title + "'?";
+                if(desc) text += "\n\nDescription: " + desc;
+                
+                if (confirm(text)) {
+                    fetch('/api/events/' + info.event.id, { method: 'DELETE' })
+                    .then(() => info.event.remove());
                 }
             }
         });
         calendar.render();
     });
 
+    function saveEvent() {
+        const title = document.getElementById('evTitle').value;
+        const start = document.getElementById('evStart').value;
+        const end = document.getElementById('evEnd').value;
+        const recurrence = document.getElementById('evRecur').value;
+        const desc = document.getElementById('evDesc').value;
+        const loc = document.getElementById('evLocation').value;
+        const color = document.getElementById('evColor').value;
+
+        if(!title || !start) { alert("Title and Start Time required"); return; }
+
+        fetch('/api/events', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                title: title, start: start, end: end, 
+                recurrence: recurrence, description: desc, 
+                location: loc, color: color
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.error) alert("Error: " + data.error);
+            else {
+                eventModal.hide();
+                calendar.refetchEvents();
+            }
+        });
+    }
+
     function importCanvas() {
         const url = document.getElementById('canvasUrl').value;
+        if(!url) return;
         
-        if(!url) { alert("Please paste the calendar feed URL"); return; }
-
-        const btn = document.querySelector('#canvasModal .btn-primary');
-        const originalText = btn.innerText;
-        btn.innerText = "Importing...";
-        btn.disabled = true;
-
         fetch('/api/import-canvas', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -116,20 +196,10 @@
         })
         .then(res => res.json())
         .then(data => {
-            if(data.error) {
-                alert("Error: " + data.error);
-            } else {
-                alert("Success! Imported " + data.count + " new events.");
-                location.reload(); // Refresh to show new events on the calendar
-            }
-        })
-        .catch(err => alert("Network error"))
-        .finally(() => {
-            btn.innerText = originalText;
-            btn.disabled = false;
+            alert("Imported " + data.count + " events.");
+            location.reload();
         });
     }
 </script>
-
 </body>
 </html>

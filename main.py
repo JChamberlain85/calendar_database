@@ -1,63 +1,53 @@
 import uuid
-import requests
 import pymysql
-from datetime import datetime, date
-from flask import Flask, render_template, request, jsonify
+import requests
+from datetime import datetime, date, timedelta
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 from icalendar import Calendar
 
 app = Flask(__name__)
+app.secret_key = "GDXTj_awXec'EOtJxy4o#`l+@~=%-T" 
 
+# --- CONFIGURATION ---
 DB_CONFIG = {
     "host": "localhost",
     "user": "root",
-    "password": "Database_Daddys123",
+    "password": "Database_Daddys123", # <--- UPDATE THIS
     "db": "calendar_database",
     "port": 3306
 }
 
+# --- DATABASE HELPERS ---
+
 def get_mysql_conn(db_name=None):
-    """
-    Creates a connection. 
-    If db_name is provided, connects to that specific DB.
-    If None, connects to MySQL server generally (for creating DBs).
-    """
     return pymysql.connect(
-        host=DB_CONFIG["host"],
-        user=DB_CONFIG["user"],
-        password=DB_CONFIG["password"],
-        database=db_name,
-        port=DB_CONFIG["port"],
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True
+        host=DB_CONFIG["host"], user=DB_CONFIG["user"], password=DB_CONFIG["password"],
+        database=db_name, port=DB_CONFIG["port"],
+        cursorclass=pymysql.cursors.DictCursor, autocommit=True
     )
 
 def setup_database():
-    """Checks if DB exists, creates it if not, and creates all tables."""
-    print("--- 1. Checking Database ---")
+    """Creates the database and UPGRADED tables."""
+    print("--- Checking Database ---")
     
-    # Step A: Create DB if missing
-    # Connect WITHOUT a database selected to perform administrative tasks
+    # 1. Create Database if missing
     conn = get_mysql_conn(db_name=None) 
     try:
         with conn.cursor() as cur:
             cur.execute(f"CREATE DATABASE IF NOT EXISTS {DB_CONFIG['db']}")
-            print(f"✅ Database '{DB_CONFIG['db']}' ready.")
     finally:
-        conn.close() # Close admin connection
+        conn.close()
 
-    # Step B: Create Tables
-    # Now connect TO the specific database
+    # 2. Create Tables with NEW COLUMNS
     conn = get_mysql_conn(db_name=DB_CONFIG["db"])
     try:
         with conn.cursor() as cur:
-            # Users
+            # Users Table
             cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 User_ID VARCHAR(36) PRIMARY KEY,
                 username VARCHAR(255) UNIQUE NOT NULL,
-                password_hash VARCHAR(128) NOT NULL,
-                salt VARCHAR(36) NOT NULL,
-                is_admin TINYINT(1) DEFAULT 0
+                password VARCHAR(255) NOT NULL
             ) ENGINE=InnoDB;
             """)
             
@@ -71,13 +61,18 @@ def setup_database():
             ) ENGINE=InnoDB;
             """)
 
-            # Events
+            # Events (UPGRADED)
             cur.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 Event_ID VARCHAR(36) PRIMARY KEY,
                 title VARCHAR(255) NOT NULL,
                 start_dt DATETIME NULL,
                 end_dt DATETIME NULL,
+                is_all_day TINYINT(1) DEFAULT 0,
+                rrule VARCHAR(255) NULL,       -- For Recurring Events (e.g., 'FREQ=WEEKLY')
+                description TEXT NULL,         -- New Field
+                location VARCHAR(255) NULL,    -- New Field
+                color VARCHAR(20) DEFAULT '#039be5', -- New Field
                 User_ID VARCHAR(36) NULL,
                 Course_ID VARCHAR(36) NULL,
                 FOREIGN KEY (User_ID) REFERENCES users(User_ID) ON DELETE SET NULL,
@@ -85,7 +80,7 @@ def setup_database():
             ) ENGINE=InnoDB;
             """)
 
-            # Academic Events (Subtype)
+            # Academic Events
             cur.execute("""
             CREATE TABLE IF NOT EXISTS academic_events (
                 Event_ID VARCHAR(36) PRIMARY KEY,
@@ -95,7 +90,7 @@ def setup_database():
             ) ENGINE=InnoDB;
             """)
             
-            # Personal Events (Subtype)
+            # Personal Events
             cur.execute("""
             CREATE TABLE IF NOT EXISTS personal_events (
                 Event_ID VARCHAR(36) PRIMARY KEY,
@@ -105,9 +100,8 @@ def setup_database():
             """)
             
             print("✅ Tables initialized.")
-            
     finally:
-        conn.close() # Close setup connection
+        conn.close()
 
 def gen_id():
     return str(uuid.uuid4())
@@ -116,82 +110,162 @@ def gen_id():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    if 'user_id' not in session:
+        return redirect(url_for('login_page'))
+    return render_template('index.html', username=session.get('username'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login_page():
+    if request.method == 'GET':
+        return render_template('login.html')
+    
+    username = request.form.get('username')
+    password = request.form.get('password')
+    
+    conn = get_mysql_conn(DB_CONFIG["db"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM users WHERE username=%s AND password=%s", (username, password))
+            user = cur.fetchone()
+            if user:
+                session['user_id'] = user['User_ID']
+                session['username'] = user['username']
+                return redirect(url_for('index'))
+            else:
+                flash("Invalid username or password")
+                return redirect(url_for('login_page'))
+    finally:
+        conn.close()
+
+@app.route('/register', methods=['POST'])
+def register():
+    username = request.form.get('username')
+    password = request.form.get('password')
+    conn = get_mysql_conn(DB_CONFIG["db"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT User_ID FROM users WHERE username=%s", (username,))
+            if cur.fetchone():
+                flash("Username already exists")
+                return redirect(url_for('login_page'))
+            
+            # Insert new user
+            uid = gen_id()
+            cur.execute("INSERT INTO users (User_ID, username, password) VALUES (%s, %s, %s)", 
+                        (uid, username, password))
+            flash("Account created! Please log in.")
+            return redirect(url_for('login_page'))
+    finally:
+        conn.close()
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login_page'))
+
+# --- API ROUTES ---
 
 @app.route('/api/events', methods=['GET'])
 def get_events():
+    if 'user_id' not in session: return jsonify([]), 401
+    
     conn = get_mysql_conn(DB_CONFIG["db"])
     events_list = []
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT e.Event_ID, e.title, e.start_dt, e.end_dt, ae.due_dt 
-                FROM events e 
-                LEFT JOIN academic_events ae ON e.Event_ID = ae.Event_ID
-            """)
+            cur.execute("SELECT * FROM events WHERE User_ID=%s", (session['user_id'],))
             rows = cur.fetchall()
             for row in rows:
-                start = row['start_dt']
-                end = row['end_dt']
-                if row['due_dt'] and not start:
-                    start = row['due_dt']
-                
-                events_list.append({
+                ev = {
                     'id': row['Event_ID'],
                     'title': row['title'],
-                    'start': start.isoformat() if start else None,
-                    'end': end.isoformat() if end else None,
-                    'color': '#d93025' if row['due_dt'] else '#039be5' 
-                })
+                    'color': row['color'],
+                    'description': row['description'],
+                    'location': row['location']
+                }
+                
+                # Handle Recurring Logic
+                if row['rrule']:
+                    ev['rrule'] = row['rrule'] 
+                    # If using rrule, start_dt usually acts as the start time of the day
+                    if row['start_dt']:
+                        # For FullCalendar RRule, we often need just the time or a start date
+                        ev['duration'] = "01:00" # Default duration if not calc'd
+                else:
+                    ev['start'] = row['start_dt'].isoformat() if row['start_dt'] else None
+                    ev['end'] = row['end_dt'].isoformat() if row['end_dt'] else None
+                
+                events_list.append(ev)
     finally:
         conn.close()
     return jsonify(events_list)
 
 @app.route('/api/events', methods=['POST'])
 def add_event():
+    if 'user_id' not in session: return jsonify({"error": "Login required"}), 401
     data = request.json
     conn = get_mysql_conn(DB_CONFIG["db"])
     eid = gen_id()
-    dummy_user = "demo_user"
     
     try:
         with conn.cursor() as cur:
-            cur.execute("INSERT IGNORE INTO users (User_ID, username, password_hash, salt) VALUES (%s, 'demo', 'x', 'x')", (dummy_user,))
-            
-            start_dt = data.get('start').replace('T', ' ').split('+')[0] if data.get('start') else None
-            end_dt = data.get('end').replace('T', ' ').split('+')[0] if data.get('end') else None
+            # Parse simple dates
+            start_dt = data.get('start')
+            end_dt = data.get('end')
+            if start_dt: start_dt = start_dt.replace('T', ' ')
+            if end_dt: end_dt = end_dt.replace('T', ' ')
 
-            cur.execute("INSERT INTO events (Event_ID, User_ID, title, start_dt, end_dt) VALUES (%s, %s, %s, %s, %s)",
-                        (eid, dummy_user, data['title'], start_dt, end_dt))
+            # Recurrence Logic
+            rrule = None
+            freq = data.get('recurrence') # 'DAILY', 'WEEKLY', etc.
+            if freq and freq != 'NONE':
+                # Build a simple RRULE string compatible with FullCalendar
+                # Example: "FREQ=WEEKLY;DTSTART=20231010T103000Z"
+                # For simplicity here, we just store FREQ.
+                # In a real app, you'd calculate proper DTSTART.
+                rrule = f"FREQ={freq}"
+                # If recurring, we might still want start_dt as the 'first instance' reference
+
+            cur.execute("""
+                INSERT INTO events 
+                (Event_ID, User_ID, title, start_dt, end_dt, rrule, description, location, color) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (eid, session['user_id'], data['title'], start_dt, end_dt, rrule, 
+                  data.get('description'), data.get('location'), data.get('color')))
+            
             cur.execute("INSERT INTO personal_events (Event_ID) VALUES (%s)", (eid,))
     except Exception as e:
+        print(e)
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
     return jsonify({"status": "success", "id": eid})
 
+# ... (Delete and Import routes remain the same as previous step, just ensure they filter by User_ID) ...
+# I will include them for completeness:
+
 @app.route('/api/events/<event_id>', methods=['DELETE'])
 def delete_event(event_id):
+    if 'user_id' not in session: return jsonify({"error": "Login required"}), 401
     conn = get_mysql_conn(DB_CONFIG["db"])
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM events WHERE Event_ID=%s", (event_id,))
+            cur.execute("DELETE FROM events WHERE Event_ID=%s AND User_ID=%s", (event_id, session['user_id']))
     finally:
         conn.close()
     return jsonify({"status": "deleted"})
 
 @app.route('/api/import-canvas', methods=['POST'])
 def import_canvas():
+    if 'user_id' not in session: return jsonify({"error": "Login required"}), 401
     data = request.json
     feed_url = data.get('url')
-    
     if not feed_url: return jsonify({"error": "No URL"}), 400
     if feed_url.startswith('webcal://'): feed_url = feed_url.replace('webcal://', 'https://', 1)
     
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0'}
     conn = get_mysql_conn(DB_CONFIG["db"])
     count = 0
-    
     try:
         resp = requests.get(feed_url, headers=headers, timeout=15)
         resp.raise_for_status()
@@ -207,46 +281,35 @@ def import_canvas():
                     dtstart_raw = component.get('dtstart').dt
                     dtend_raw = component.get('dtend').dt if component.get('dtend') else None
 
-                    # 1. Handle Start Time
-                    if isinstance(dtstart_raw, datetime): 
-                        dtstart = dtstart_raw.replace(tzinfo=None)
-                    elif isinstance(dtstart_raw, date): 
-                        dtstart = datetime.combine(dtstart_raw, datetime.min.time())
-                    else: 
-                        continue
+                    if isinstance(dtstart_raw, datetime): dtstart = dtstart_raw.replace(tzinfo=None)
+                    elif isinstance(dtstart_raw, date): dtstart = datetime.combine(dtstart_raw, datetime.min.time())
+                    else: continue
                     
-                    # 2. Handle End Time (THE FIX IS HERE)
-                    dtend = None # <--- Initialize it as None by default
-                    
-                    if isinstance(dtend_raw, datetime): 
-                        dtend = dtend_raw.replace(tzinfo=None)
+                    dtend = None
+                    if isinstance(dtend_raw, datetime): dtend = dtend_raw.replace(tzinfo=None)
                     elif isinstance(dtend_raw, date): 
                         dtend = datetime.combine(dtend_raw, datetime.min.time())
-                        if dtend > dtstart: dtend = dtend - datetime.timedelta(minutes=1)
+                        if dtend > dtstart: dtend = dtend - timedelta(minutes=1)
                     
-                    # 3. Create Strings for MySQL
                     start_str = dtstart.strftime('%Y-%m-%d %H:%M:%S')
                     end_str = dtend.strftime('%Y-%m-%d %H:%M:%S') if dtend else None
 
-                    # 4. Save to DB
-                    cur.execute("SELECT Event_ID FROM events WHERE title=%s AND start_dt=%s", (title, start_str))
+                    # Only checking for duplicate title+time for THIS user
+                    cur.execute("SELECT Event_ID FROM events WHERE title=%s AND start_dt=%s AND User_ID=%s", (title, start_str, session['user_id']))
                     if not cur.fetchone():
                         eid = gen_id()
-                        cur.execute("INSERT INTO events (Event_ID, title, start_dt, end_dt, Course_ID) VALUES (%s, %s, %s, %s, %s)", 
-                                    (eid, title, start_str, end_str, course_id))
-                        cur.execute("INSERT INTO academic_events (Event_ID, due_dt) VALUES (%s, %s)", (eid, start_str))
+                        cur.execute("""
+                            INSERT INTO events (Event_ID, title, start_dt, end_dt, Course_ID, User_ID, color) 
+                            VALUES (%s, %s, %s, %s, %s, %s, '#d93025')
+                        """, (eid, title, start_str, end_str, course_id, session['user_id']))
                         count += 1
     except Exception as e:
-        print(f"Error import: {e}") # Print error to terminal for debugging
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
     return jsonify({"status": "imported", "count": count})
 
 if __name__ == '__main__':
-    try:
-        setup_database() # Creates DB and Tables properly
-        print("🚀 Starting Server on http://127.0.0.1:5000")
-        app.run(debug=True, port=5000)
-    except Exception as e:
-        print(f"❌ Startup Error: {e}")
+    setup_database()
+    print("🚀 Server Running!")
+    app.run(debug=True, port=5000)
