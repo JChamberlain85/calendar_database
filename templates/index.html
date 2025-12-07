@@ -121,10 +121,9 @@
             editable: true,
             events: '/api/events',
             
-            // When user clicks a date slot
+            // if user clicks date slot
             select: function(info) {
                 // Pre-fill the modal with the clicked date
-                // Note: datetime-local expects "YYYY-MM-DDTHH:MM"
                 let d = new Date(info.startStr);
                 // Adjust for timezone offset for input value
                 d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
@@ -138,10 +137,8 @@
                 eventModal.show();
             },
 
-            // Click existing event to delete (or view details)
+            // Click existing event to delete
             eventClick: function(info) {
-                // You could open a "View Details" modal here. 
-                // For now, keep delete functionality:
                 let desc = info.event.extendedProps.description || "";
                 let text = "Delete '" + info.event.title + "'?";
                 if(desc) text += "\n\nDescription: " + desc;

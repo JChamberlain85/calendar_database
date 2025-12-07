@@ -8,17 +8,16 @@ from icalendar import Calendar
 app = Flask(__name__)
 app.secret_key = "GDXTj_awXec'EOtJxy4o#`l+@~=%-T" 
 
-# --- CONFIGURATION ---
+# Config, update for your server
 DB_CONFIG = {
     "host": "localhost",
     "user": "root",
-    "password": "Database_Daddys123", # <--- UPDATE THIS
+    "password": "Database_Daddys123", 
     "db": "calendar_database",
     "port": 3306
 }
 
-# --- DATABASE HELPERS ---
-
+#Connect mysql server
 def get_mysql_conn(db_name=None):
     return pymysql.connect(
         host=DB_CONFIG["host"], user=DB_CONFIG["user"], password=DB_CONFIG["password"],
@@ -27,10 +26,7 @@ def get_mysql_conn(db_name=None):
     )
 
 def setup_database():
-    """Creates the database and UPGRADED tables."""
-    print("--- Checking Database ---")
-    
-    # 1. Create Database if missing
+    #Create Database if missing
     conn = get_mysql_conn(db_name=None) 
     try:
         with conn.cursor() as cur:
@@ -38,11 +34,11 @@ def setup_database():
     finally:
         conn.close()
 
-    # 2. Create Tables with NEW COLUMNS
+    # Create new tables
     conn = get_mysql_conn(db_name=DB_CONFIG["db"])
     try:
         with conn.cursor() as cur:
-            # Users Table
+            # Users table
             cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 User_ID VARCHAR(36) PRIMARY KEY,
@@ -50,18 +46,8 @@ def setup_database():
                 password VARCHAR(255) NOT NULL
             ) ENGINE=InnoDB;
             """)
-            
-            # Courses
-            cur.execute("""
-            CREATE TABLE IF NOT EXISTS courses (
-                Course_ID VARCHAR(36) PRIMARY KEY,
-                Course_code VARCHAR(255) UNIQUE NOT NULL,
-                title VARCHAR(255) NOT NULL,
-                department VARCHAR(255) NULL
-            ) ENGINE=InnoDB;
-            """)
 
-            # Events (UPGRADED)
+            # Events table
             cur.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 Event_ID VARCHAR(36) PRIMARY KEY,
@@ -74,23 +60,11 @@ def setup_database():
                 location VARCHAR(255) NULL,    -- New Field
                 color VARCHAR(20) DEFAULT '#039be5', -- New Field
                 User_ID VARCHAR(36) NULL,
-                Course_ID VARCHAR(36) NULL,
-                FOREIGN KEY (User_ID) REFERENCES users(User_ID) ON DELETE SET NULL,
-                FOREIGN KEY (Course_ID) REFERENCES courses(Course_ID) ON DELETE SET NULL
+                FOREIGN KEY (User_ID) REFERENCES users(User_ID) ON DELETE SET NULL
             ) ENGINE=InnoDB;
             """)
 
-            # Academic Events
-            cur.execute("""
-            CREATE TABLE IF NOT EXISTS academic_events (
-                Event_ID VARCHAR(36) PRIMARY KEY,
-                due_dt DATETIME NULL,
-                academic_type VARCHAR(128) NULL,
-                FOREIGN KEY (Event_ID) REFERENCES events(Event_ID) ON DELETE CASCADE
-            ) ENGINE=InnoDB;
-            """)
-            
-            # Personal Events
+            # Personal Events table
             cur.execute("""
             CREATE TABLE IF NOT EXISTS personal_events (
                 Event_ID VARCHAR(36) PRIMARY KEY,
@@ -99,21 +73,20 @@ def setup_database():
             ) ENGINE=InnoDB;
             """)
             
-            print("✅ Tables initialized.")
     finally:
         conn.close()
 
 def gen_id():
     return str(uuid.uuid4())
 
-# --- ROUTES ---
-
+#Force login
 @app.route('/')
 def index():
     if 'user_id' not in session:
         return redirect(url_for('login_page'))
     return render_template('index.html', username=session.get('username'))
 
+#login prompt
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     if request.method == 'GET':
@@ -130,13 +103,14 @@ def login_page():
             if user:
                 session['user_id'] = user['User_ID']
                 session['username'] = user['username']
-                return redirect(url_for('index'))
+                return redirect(url_for('index')) #user confirmed 
             else:
                 flash("Invalid username or password")
-                return redirect(url_for('login_page'))
+                return redirect(url_for('login_page')) #user denied
     finally:
         conn.close()
 
+#new user register
 @app.route('/register', methods=['POST'])
 def register():
     username = request.form.get('username')
@@ -146,7 +120,7 @@ def register():
         with conn.cursor() as cur:
             cur.execute("SELECT User_ID FROM users WHERE username=%s", (username,))
             if cur.fetchone():
-                flash("Username already exists")
+                flash("Username already exists") #duplicate user check
                 return redirect(url_for('login_page'))
             
             # Insert new user
@@ -158,13 +132,13 @@ def register():
     finally:
         conn.close()
 
+#sign out
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login_page'))
 
-# --- API ROUTES ---
-
+#Event pull
 @app.route('/api/events', methods=['GET'])
 def get_events():
     if 'user_id' not in session: return jsonify([]), 401
@@ -184,13 +158,11 @@ def get_events():
                     'location': row['location']
                 }
                 
-                # Handle Recurring Logic
                 if row['rrule']:
                     ev['rrule'] = row['rrule'] 
                     # If using rrule, start_dt usually acts as the start time of the day
                     if row['start_dt']:
-                        # For FullCalendar RRule, we often need just the time or a start date
-                        ev['duration'] = "01:00" # Default duration if not calc'd
+                        ev['duration'] = "01:00" # Default duration
                 else:
                     ev['start'] = row['start_dt'].isoformat() if row['start_dt'] else None
                     ev['end'] = row['end_dt'].isoformat() if row['end_dt'] else None
@@ -209,23 +181,20 @@ def add_event():
     
     try:
         with conn.cursor() as cur:
-            # Parse simple dates
+            # simple dates
             start_dt = data.get('start')
             end_dt = data.get('end')
             if start_dt: start_dt = start_dt.replace('T', ' ')
             if end_dt: end_dt = end_dt.replace('T', ' ')
 
-            # Recurrence Logic
+            # recurring dates
             rrule = None
-            freq = data.get('recurrence') # 'DAILY', 'WEEKLY', etc.
+            freq = data.get('recurrence')
             if freq and freq != 'NONE':
-                # Build a simple RRULE string compatible with FullCalendar
-                # Example: "FREQ=WEEKLY;DTSTART=20231010T103000Z"
-                # For simplicity here, we just store FREQ.
-                # In a real app, you'd calculate proper DTSTART.
                 rrule = f"FREQ={freq}"
-                # If recurring, we might still want start_dt as the 'first instance' reference
-
+                
+            #insert into events table
+            # FIXED: VALUES count now matches variables
             cur.execute("""
                 INSERT INTO events 
                 (Event_ID, User_ID, title, start_dt, end_dt, rrule, description, location, color) 
@@ -241,8 +210,7 @@ def add_event():
         conn.close()
     return jsonify({"status": "success", "id": eid})
 
-# ... (Delete and Import routes remain the same as previous step, just ensure they filter by User_ID) ...
-# I will include them for completeness:
+#Delete events
 
 @app.route('/api/events/<event_id>', methods=['DELETE'])
 def delete_event(event_id):
@@ -255,13 +223,15 @@ def delete_event(event_id):
         conn.close()
     return jsonify({"status": "deleted"})
 
+#import canvas events
 @app.route('/api/import-canvas', methods=['POST'])
 def import_canvas():
     if 'user_id' not in session: return jsonify({"error": "Login required"}), 401
+
     data = request.json
     feed_url = data.get('url')
     if not feed_url: return jsonify({"error": "No URL"}), 400
-    if feed_url.startswith('webcal://'): feed_url = feed_url.replace('webcal://', 'https://', 1)
+    if feed_url.startswith('webcal://'): feed_url = feed_url.replace('webcal://', 'https://', 1) #hopefully works now
     
     headers = {'User-Agent': 'Mozilla/5.0'}
     conn = get_mysql_conn(DB_CONFIG["db"])
@@ -272,11 +242,8 @@ def import_canvas():
         cal = Calendar.from_ical(resp.content)
         
         with conn.cursor() as cur:
-            course_id = "canvas_import_bucket"
-            cur.execute("INSERT IGNORE INTO courses (Course_ID, Course_code, title) VALUES (%s, 'CANVAS', 'Imported')", (course_id,))
-            
             for component in cal.walk():
-                if component.name == "VEVENT":
+                if component.name == "VEVENT": #filter useful information
                     title = str(component.get('summary'))
                     dtstart_raw = component.get('dtstart').dt
                     dtend_raw = component.get('dtend').dt if component.get('dtend') else None
@@ -294,14 +261,14 @@ def import_canvas():
                     start_str = dtstart.strftime('%Y-%m-%d %H:%M:%S')
                     end_str = dtend.strftime('%Y-%m-%d %H:%M:%S') if dtend else None
 
-                    # Only checking for duplicate title+time for THIS user
+                    # block duplicate canvas events
                     cur.execute("SELECT Event_ID FROM events WHERE title=%s AND start_dt=%s AND User_ID=%s", (title, start_str, session['user_id']))
                     if not cur.fetchone():
                         eid = gen_id()
                         cur.execute("""
-                            INSERT INTO events (Event_ID, title, start_dt, end_dt, Course_ID, User_ID, color) 
-                            VALUES (%s, %s, %s, %s, %s, %s, '#d93025')
-                        """, (eid, title, start_str, end_str, course_id, session['user_id']))
+                            INSERT INTO events (Event_ID, title, start_dt, end_dt,  User_ID, color) 
+                            VALUES (%s, %s, %s, %s, %s, '#d93025')
+                        """, (eid, title, start_str, end_str, session['user_id']))
                         count += 1
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -311,5 +278,5 @@ def import_canvas():
 
 if __name__ == '__main__':
     setup_database()
-    print("🚀 Server Running!")
+    print("Server Running")
     app.run(debug=True, port=5000)
