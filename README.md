@@ -1,6 +1,6 @@
 # calendar_database
 
-A comprehensive calendar application built with **Python (Flask)** and **MySQL**. This application allows students to manage personal events, recurring schedules, and automatically sync their assignments from **Canvas LMS** using calendar feeds.
+A comprehensive calendar application built with **Python (Flask)** and **MySQL**. This application allows students to manage personal events, recurring schedules, and automatically sync their assignments from **Canvas** using calendar feeds.
 
 ---
 
