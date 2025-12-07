@@ -47,18 +47,18 @@ def setup_database():
             ) ENGINE=InnoDB;
             """)
 
-            # Events table
+            # Academic Events table
             cur.execute("""
-            CREATE TABLE IF NOT EXISTS events (
+            CREATE TABLE IF NOT EXISTS academic_events (
                 Event_ID VARCHAR(36) PRIMARY KEY,
                 title VARCHAR(255) NOT NULL,
                 start_dt DATETIME NULL,
                 end_dt DATETIME NULL,
                 is_all_day TINYINT(1) DEFAULT 0,
-                rrule VARCHAR(255) NULL,       -- For Recurring Events (e.g., 'FREQ=WEEKLY')
-                description TEXT NULL,         -- New Field
-                location VARCHAR(255) NULL,    -- New Field
-                color VARCHAR(20) DEFAULT '#039be5', -- New Field
+                rrule VARCHAR(255) NULL,       
+                description TEXT NULL,        
+                location VARCHAR(255) NULL,   
+                color VARCHAR(20) DEFAULT '#039be5', 
                 User_ID VARCHAR(36) NULL,
                 FOREIGN KEY (User_ID) REFERENCES users(User_ID) ON DELETE SET NULL
             ) ENGINE=InnoDB;
@@ -69,7 +69,7 @@ def setup_database():
             CREATE TABLE IF NOT EXISTS personal_events (
                 Event_ID VARCHAR(36) PRIMARY KEY,
                 privacy VARCHAR(64) NULL,
-                FOREIGN KEY (Event_ID) REFERENCES events(Event_ID) ON DELETE CASCADE
+                FOREIGN KEY (Event_ID) REFERENCES academic_events(Event_ID) ON DELETE CASCADE
             ) ENGINE=InnoDB;
             """)
             
@@ -138,8 +138,8 @@ def logout():
     session.clear()
     return redirect(url_for('login_page'))
 
-#Event pull
-@app.route('/api/events', methods=['GET'])
+#Academic Event pull
+@app.route('/api/academic_events', methods=['GET'])
 def get_events():
     if 'user_id' not in session: return jsonify([]), 401
     
@@ -147,7 +147,7 @@ def get_events():
     events_list = []
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM events WHERE User_ID=%s", (session['user_id'],))
+            cur.execute("SELECT * FROM academic_events WHERE User_ID=%s", (session['user_id'],))
             rows = cur.fetchall()
             for row in rows:
                 ev = {
@@ -158,21 +158,22 @@ def get_events():
                     'location': row['location']
                 }
                 
+                # FIX: Always set start and end if they exist
+                if row['start_dt']:
+                    ev['start'] = row['start_dt'].isoformat()
+                if row['end_dt']:
+                    ev['end'] = row['end_dt'].isoformat()
+                
                 if row['rrule']:
                     ev['rrule'] = row['rrule'] 
-                    # If using rrule, start_dt usually acts as the start time of the day
-                    if row['start_dt']:
-                        ev['duration'] = "01:00" # Default duration
-                else:
-                    ev['start'] = row['start_dt'].isoformat() if row['start_dt'] else None
-                    ev['end'] = row['end_dt'].isoformat() if row['end_dt'] else None
+                    ev['duration'] = "01:00" 
                 
                 events_list.append(ev)
     finally:
         conn.close()
     return jsonify(events_list)
 
-@app.route('/api/events', methods=['POST'])
+@app.route('/api/academic_events', methods=['POST'])
 def add_event():
     if 'user_id' not in session: return jsonify({"error": "Login required"}), 401
     data = request.json
@@ -193,10 +194,9 @@ def add_event():
             if freq and freq != 'NONE':
                 rrule = f"FREQ={freq}"
                 
-            #insert into events table
-            # FIXED: VALUES count now matches variables
+            #insert into events tables
             cur.execute("""
-                INSERT INTO events 
+                INSERT INTO academic_events 
                 (Event_ID, User_ID, title, start_dt, end_dt, rrule, description, location, color) 
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (eid, session['user_id'], data['title'], start_dt, end_dt, rrule, 
@@ -212,13 +212,13 @@ def add_event():
 
 #Delete events
 
-@app.route('/api/events/<event_id>', methods=['DELETE'])
+@app.route('/api/academic_events/<event_id>', methods=['DELETE'])
 def delete_event(event_id):
     if 'user_id' not in session: return jsonify({"error": "Login required"}), 401
     conn = get_mysql_conn(DB_CONFIG["db"])
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM events WHERE Event_ID=%s AND User_ID=%s", (event_id, session['user_id']))
+            cur.execute("DELETE FROM academic_events WHERE Event_ID=%s AND User_ID=%s", (event_id, session['user_id']))
     finally:
         conn.close()
     return jsonify({"status": "deleted"})
@@ -262,11 +262,11 @@ def import_canvas():
                     end_str = dtend.strftime('%Y-%m-%d %H:%M:%S') if dtend else None
 
                     # block duplicate canvas events
-                    cur.execute("SELECT Event_ID FROM events WHERE title=%s AND start_dt=%s AND User_ID=%s", (title, start_str, session['user_id']))
+                    cur.execute("SELECT Event_ID FROM academic_events WHERE title=%s AND start_dt=%s AND User_ID=%s", (title, start_str, session['user_id']))
                     if not cur.fetchone():
                         eid = gen_id()
                         cur.execute("""
-                            INSERT INTO events (Event_ID, title, start_dt, end_dt,  User_ID, color) 
+                            INSERT INTO academic_events (Event_ID, title, start_dt, end_dt,  User_ID, color) 
                             VALUES (%s, %s, %s, %s, %s, '#d93025')
                         """, (eid, title, start_str, end_str, session['user_id']))
                         count += 1

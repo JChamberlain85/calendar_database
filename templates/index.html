@@ -119,7 +119,7 @@
             headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' },
             selectable: true,
             editable: true,
-            events: '/api/events',
+            events: '/api/academic_events',
             
             // if user clicks date slot
             select: function(info) {
@@ -144,7 +144,7 @@
                 if(desc) text += "\n\nDescription: " + desc;
                 
                 if (confirm(text)) {
-                    fetch('/api/events/' + info.event.id, { method: 'DELETE' })
+                    fetch('/api/academic_events/' + info.event.id, { method: 'DELETE' })
                     .then(() => info.event.remove());
                 }
             }
@@ -163,7 +163,7 @@
 
         if(!title || !start) { alert("Title and Start Time required"); return; }
 
-        fetch('/api/events', {
+        fetch('/api/academic_events', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
